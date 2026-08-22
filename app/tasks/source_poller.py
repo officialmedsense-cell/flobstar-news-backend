@@ -161,66 +161,75 @@ def is_priority_fresh(published_at: Optional[datetime]) -> bool:
     return (now - published_at) <= timedelta(hours=PRIORITY_WINDOW_HOURS)
 
 
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Accept": "application/rss+xml, application/xml, text/xml, text/html, application/xhtml+xml, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 # ──────────────────────────────────────────────────────────────────────────────
-# Single feed poller
+# Single feed poller with concurrency limiting
 # ──────────────────────────────────────────────────────────────────────────────
 
-async def _poll_one_feed(feed: Dict[str, str]) -> List[Dict[str, Any]]:
+async def _poll_one_feed(feed: Dict[str, str], sem: asyncio.Semaphore) -> List[Dict[str, Any]]:
     """
-    Fetch and parse one RSS feed.  Returns a list of raw entry dicts.
-    Has an 8-second timeout — slow/dead feeds are skipped gracefully.
+    Fetch and parse one RSS feed safely using a concurrency semaphore.
     """
     name = feed["name"]
     url = feed["url"]
     default_category = feed.get("category", "Health")
 
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(url, follow_redirects=True)
-            resp.raise_for_status()
-            raw = resp.content
+    async with sem:
+        try:
+            async with httpx.AsyncClient(timeout=15.0, headers=BROWSER_HEADERS, follow_redirects=True) as client:
+                resp = await client.get(url)
+                if resp.status_code != 200:
+                    logger.debug(f"[{name}] HTTP status {resp.status_code}")
+                    return []
+                raw = resp.content
 
-        parsed = feedparser.parse(raw)
-        entries = []
+            parsed = feedparser.parse(raw)
+            entries = []
 
-        for entry in parsed.entries:
-            pub = entry.get("published_parsed")
-            published_at = datetime(*pub[:6], tzinfo=timezone.utc) if pub else None
+            for entry in parsed.entries:
+                pub = entry.get("published_parsed")
+                published_at = datetime(*pub[:6], tzinfo=timezone.utc) if pub else None
 
-            # Freshness gate — skip old articles immediately
-            if not is_fresh(published_at):
-                continue
+                # Freshness gate — skip old articles immediately
+                if not is_fresh(published_at):
+                    continue
 
-            # Extract content
-            content = ""
-            if hasattr(entry, "content") and entry.content:
-                content = entry.content[0].get("value", "")
-            if not content:
-                content = getattr(entry, "summary", "") or ""
+                # Extract content
+                content = ""
+                if hasattr(entry, "content") and entry.content:
+                    content = entry.content[0].get("value", "")
+                if not content:
+                    content = getattr(entry, "summary", "") or ""
 
-            # Extract tags for category normalization
-            tags = [tag.get("term", "") for tag in getattr(entry, "tags", [])]
-            raw_cat = tags[0] if tags else default_category
-            category = normalize_rss_category(raw_cat) or default_category
+                # Extract tags for category normalization
+                tags = [tag.get("term", "") for tag in getattr(entry, "tags", [])]
+                raw_cat = tags[0] if tags else default_category
+                category = normalize_rss_category(raw_cat) or default_category
 
-            entries.append({
-                "source_name": name,
-                "source_url": entry.get("link", ""),
-                "title": entry.get("title", "").strip(),
-                "summary": getattr(entry, "summary", "").strip(),
-                "rss_content": content.strip(),
-                "published_at": published_at,
-                "detected_at": datetime.now(timezone.utc),
-                "category": category,
-                "is_priority": is_priority_fresh(published_at),
-            })
+                entries.append({
+                    "source_name": name,
+                    "source_url": entry.get("link", ""),
+                    "title": entry.get("title", "").strip(),
+                    "summary": getattr(entry, "summary", "").strip(),
+                    "rss_content": content.strip(),
+                    "published_at": published_at,
+                    "detected_at": datetime.now(timezone.utc),
+                    "category": category,
+                    "is_priority": is_priority_fresh(published_at),
+                })
 
-        logger.info(f"[{name}] {len(entries)} fresh entries found")
-        return entries
+            if entries:
+                logger.info(f"[{name}] {len(entries)} fresh entries found")
+            return entries
 
-    except Exception as e:
-        logger.warning(f"[{name}] Feed error: {e}")
-        return []
+        except Exception as e:
+            logger.debug(f"[{name}] Feed skip: {e}")
+            return []
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -272,8 +281,9 @@ async def poll_sources():
     # 1. Load active feeds
     feeds = await load_active_feeds()
 
-    # 2. Fetch all feeds in parallel
-    tasks = [_poll_one_feed(feed) for feed in feeds]
+    # 2. Fetch all feeds in parallel with controlled concurrency (5 at a time)
+    sem = asyncio.Semaphore(5)
+    tasks = [_poll_one_feed(feed, sem) for feed in feeds]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     all_entries: List[Dict[str, Any]] = []

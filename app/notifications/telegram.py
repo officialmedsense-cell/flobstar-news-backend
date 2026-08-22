@@ -73,7 +73,7 @@ class TelegramNotifier:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(self._url("sendMessage"), json=payload)
                 resp.raise_for_status()
                 data = resp.json()
