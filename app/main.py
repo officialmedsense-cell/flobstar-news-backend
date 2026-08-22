@@ -87,6 +87,18 @@ app.add_middleware(
 # Health check
 # ─────────────────────────────────────────
 
+@app.get("/", tags=["system"])
+async def root():
+    """Root endpoint returning 200 OK and service status."""
+    return {
+        "status": "healthy",
+        "service": "Flobstar News Intelligence Backend",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
 @app.get("/health", tags=["system"])
 async def health_check():
     """
