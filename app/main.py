@@ -36,22 +36,14 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager — startup and shutdown."""
     logger.info("Starting Flobstar News Intelligence Backend")
 
-    # Auto-create database tables (safe — skips existing tables)
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables verified / created")
-    except Exception as e:
-        logger.error("Database initialization failed", error=str(e))
-
     # Start background task scheduler
     await scheduler.start()
-    logger.info("Background scheduler started (RSS polling every 15 min)")
+    logger.info("Background scheduler started (RSS polling active)")
 
     # Telegram startup notification
     await telegram.alert_system_status(
         "🚀 Flobstar News Intelligence Backend is now online.\n"
-        "RSS polling active · AI: Mistral"
+        "24/7 RSS Poller Active · AI: Mistral"
     )
 
     yield
@@ -59,7 +51,6 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down Flobstar News Intelligence Backend")
     await scheduler.stop()
-    await engine.dispose()
     logger.info("Shutdown complete")
 
 
