@@ -60,12 +60,11 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     @property
-    def database_url(self) -> str:
-        """Construct async PostgreSQL database URL"""
-        if self.SUPABASE_DB_PASSWORD:
+    def database_url(self) -> Optional[str]:
+        """Construct async PostgreSQL database URL if direct credentials exist"""
+        if self.SUPABASE_DB_PASSWORD and self.SUPABASE_DB_HOST:
             return f"postgresql+asyncpg://{self.SUPABASE_DB_USER}:{self.SUPABASE_DB_PASSWORD}@{self.SUPABASE_DB_HOST}:{self.SUPABASE_DB_PORT}/{self.SUPABASE_DB_NAME}"
-        # Fallback to using Supabase connection string if available
-        return self.SUPABASE_URL
+        return None
     
     class Config:
         env_file = ".env"
