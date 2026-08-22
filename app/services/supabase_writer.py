@@ -49,7 +49,7 @@ def detect_paywall(text: str) -> bool:
 # Source sufficiency thresholds (matching frontend TypeScript constants)
 # ──────────────────────────────────────────────────────────────────────────────
 SOURCE_FULL_THRESHOLD = 250
-SOURCE_PARTIAL_THRESHOLD = 80
+SOURCE_PARTIAL_THRESHOLD = 60   # lowered: RSS summaries average 80-150 words combined
 
 
 def evaluate_source(text: str) -> Dict[str, Any]:

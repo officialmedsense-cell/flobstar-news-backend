@@ -99,9 +99,12 @@ DEFAULT_FEEDS: List[Dict[str, str]] = [
 
 async def load_active_feeds() -> List[Dict[str, str]]:
     """
-    Try to load active RSS sources from the Supabase news_sources table.
-    Falls back to DEFAULT_FEEDS if the table is empty or unreachable.
+    Load active RSS feeds, merging DEFAULT_FEEDS with Supabase news_sources.
+    Supabase entries override defaults with the same URL; extras are appended.
     """
+    # Start with all built-in default feeds
+    feed_map: Dict[str, Dict[str, str]] = {f["url"]: f for f in DEFAULT_FEEDS}
+
     try:
         url = f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1/news_sources"
         headers = {
@@ -111,25 +114,25 @@ async def load_active_feeds() -> List[Dict[str, str]]:
         params = {"select": "name,feed_url,category", "status": "eq.active"}
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(url, headers=headers, params=params)
-            data = resp.json()
-            if isinstance(data, list) and len(data) > 0:
-                feeds = [
-                    {
-                        "name": row.get("name", "Unknown"),
-                        "url": row.get("feed_url", ""),
-                        "category": row.get("category") or "Health",
-                    }
-                    for row in data
-                    if row.get("feed_url")
-                ]
-                if feeds:
-                    logger.info(f"Loaded {len(feeds)} active feeds from Supabase news_sources")
-                    return feeds
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list) and len(data) > 0:
+                    for row in data:
+                        feed_url = row.get("feed_url")
+                        if feed_url:
+                            feed_map[feed_url] = {
+                                "name": row.get("name", "News Source"),
+                                "url": feed_url,
+                                "category": row.get("category") or "Health",
+                            }
+                    logger.info(f"Loaded active feeds from Supabase news_sources (total combined: {len(feed_map)})")
     except Exception as e:
-        logger.warning("Could not load feeds from Supabase — using defaults", error=str(e))
+        logger.warning("Could not load feeds from Supabase — using default roster", error=str(e))
 
-    logger.info(f"Using {len(DEFAULT_FEEDS)} default RSS feeds")
-    return DEFAULT_FEEDS
+    combined = list(feed_map.values())
+    logger.info(f"Active RSS feeds roster ready: {len(combined)} feeds")
+    return combined
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -236,21 +239,30 @@ async def _poll_one_feed(feed: Dict[str, str], sem: asyncio.Semaphore) -> List[D
 # Full-text acquisition via web scraper
 # ──────────────────────────────────────────────────────────────────────────────
 
-async def _acquire_full_text(url: str, rss_content: str) -> str:
+async def _acquire_full_text(url: str, rss_content: str, rss_summary: str = "") -> str:
     """
     Attempt to scrape full article text from the original URL.
-    Falls back to the RSS content if scraping fails or returns less content.
+    Always combines scraped text + RSS content + RSS summary to maximise
+    the word count available for source evaluation and AI generation.
+    If the article is behind Cloudflare / a paywall, the RSS text alone
+    is used so that open-access feeds with rich RSS descriptions still pass.
     """
+    combined_rss = f"{rss_summary}\n\n{rss_content}".strip()
+
     try:
         async with WebScraper(timeout=15) as scraper:
             data = await scraper.scrape_article(url)
-            scraped = data.get("content", "")
-            if scraped and len(scraped) > len(rss_content):
-                return scraped
+            scraped = data.get("content", "").strip()
+            # Accept scraped text only if it looks like real article content
+            # (not a Cloudflare/bot-challenge page which typically has <100 chars)
+            if scraped and len(scraped) > 200:
+                # Combine scraped + RSS for maximum context
+                combined = f"{scraped}\n\n{combined_rss}".strip()
+                return combined
     except Exception as e:
         logger.debug(f"Scrape fallback for {url}: {e}")
 
-    return rss_content
+    return combined_rss
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -330,9 +342,14 @@ async def poll_sources():
 
         # ── c. Full-text acquisition ──────────────────────────────────
         logger.info(f"Acquiring full text: {title[:60]}")
-        full_text = await _acquire_full_text(source_url, entry["rss_content"])
+        full_text = await _acquire_full_text(
+            source_url,
+            entry["rss_content"],
+            rss_summary=entry.get("summary", ""),
+        )
 
         # ── d. Source sufficiency gate ────────────────────────────────
+        # If scraped text is thin, also try title + summary as context
         evaluation = evaluate_source(full_text)
 
         if not evaluation["can_generate"]:
