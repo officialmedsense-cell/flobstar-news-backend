@@ -1,0 +1,63 @@
+# Render.com deployment configuration for Flobstar News Intelligence Backend
+# Deploy this as a Web Service on Render (Free plan — 750 hrs/month)
+#
+# Setup steps:
+#  1. Push the /backend folder to a GitHub repo
+#  2. Connect the repo to Render
+#  3. Render auto-detects this render.yaml and configures everything
+#  4. Add environment variables in the Render dashboard (see envVars below)
+#  5. Set up UptimeRobot to ping https://<your-render-url>/health every 5 min
+
+services:
+  - type: web
+    name: flobstar-news-intelligence
+    runtime: python
+    region: oregon
+    plan: free
+
+    # Build settings
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    # Health check — Render uses this to know the app is alive
+    # UptimeRobot should also ping this URL every 5 minutes
+    healthCheckPath: /health
+
+    # Auto-deploy on every git push
+    autoDeploy: true
+
+    # Environment variables
+    # Add the SECRET values in the Render dashboard, not here
+    envVars:
+      - key: DEBUG
+        value: "false"
+      - key: ENVIRONMENT
+        value: production
+
+      # ── Supabase — add in Render dashboard ────────────────────────────────
+      - key: SUPABASE_URL
+        sync: false      # Set manually in Render dashboard
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false      # Set manually in Render dashboard
+
+      # ── AI — add in Render dashboard ──────────────────────────────────────
+      - key: MISTRAL_API_KEY
+        sync: false      # Set manually in Render dashboard
+      - key: OPENAI_API_KEY
+        sync: false      # Optional fallback
+      - key: ANTHROPIC_API_KEY
+        sync: false      # Optional fallback
+
+      # ── Telegram — add in Render dashboard ────────────────────────────────
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+
+      # ── Polling config ────────────────────────────────────────────────────
+      - key: RSS_POLLING_INTERVAL_MINUTES
+        value: "15"
+
+      # ── Frontend URL (for Telegram review links) ──────────────────────────
+      - key: FRONTEND_URL
+        value: https://your-vercel-domain.vercel.app  # Update with your real URL
