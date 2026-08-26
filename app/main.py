@@ -40,12 +40,6 @@ async def lifespan(app: FastAPI):
     await scheduler.start()
     logger.info("Background scheduler started (RSS polling active)")
 
-    # Telegram startup notification
-    await telegram.alert_system_status(
-        "🚀 Flobstar News Intelligence Backend is now online.\n"
-        "24/7 RSS Poller Active · AI: Mistral"
-    )
-
     yield
 
     # Shutdown

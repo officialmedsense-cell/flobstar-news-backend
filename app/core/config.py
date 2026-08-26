@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     # AI Services
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
-    MISTRAL_API_KEY: Optional[str] = None
+    MISTRAL_API_KEY: Optional[str] = "FJovoIU58hXLNnW4zJUz1a0HqUnUegnc"
+    MISTRAL_API_KEY_FALLBACK: Optional[str] = "llZIFBtjBsgeIHliEygwbOOCUVKqXVO7"
     AI_MODEL: str = "gpt-4-turbo-preview"
     
     # Email (Resend)

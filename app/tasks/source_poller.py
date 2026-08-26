@@ -420,9 +420,9 @@ async def poll_sources():
             continue
 
         stats["drafts_saved"] += 1
-        priority_flag = "🚨 BREAKING" if entry["is_priority"] else "📰 NEW DRAFT"
+        priority_flag = "BREAKING" if entry["is_priority"] else "NEW DRAFT"
         logger.info(
-            f"{priority_flag} saved: {flobstar_headline[:70]} "
+            f"[{priority_flag}] saved: {flobstar_headline[:70]} "
             f"[{entry['category']}] id={article_id}"
         )
 

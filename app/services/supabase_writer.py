@@ -20,13 +20,12 @@ logger = structlog.get_logger()
 # ──────────────────────────────────────────────────────────────────────────────
 PAYWALL_PATTERNS = [
     r"subscribe (to|now|for) (read|access|continue)",
-    r"(premium|subscriber[\-\s]only|members[\-\s]only)",
-    r"(create a free account|sign up to read|log in to read)",
-    r"this article is (for|available to) (subscribers|members|premium)",
-    r"(you've reached|you have reached) your (free article|monthly limit)",
-    r"to (continue|keep) reading",
-    r"unlock (this|full) (article|story|content)",
-    r"metered paywall",
+    r"(this is a subscriber[\-\s]only|for subscribers[\-\s]only|members[\-\s]only content)",
+    r"(create a free account to read|sign up to read full|log in to read full)",
+    r"this article is (exclusively for|available only to) (subscribers|members)",
+    r"(you've reached|you have reached) your (free article limit|monthly limit)",
+    r"(subscribe to continue reading|metered paywall)",
+    r"unlock (this|full) (article|story) with a subscription",
     r"\[subscription required\]",
 ]
 _PAYWALL_RE = re.compile("|".join(PAYWALL_PATTERNS), re.IGNORECASE)
@@ -105,17 +104,22 @@ class SupabaseWriter:
         """Check if an article with this source URL already exists (dedup gate)."""
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    f"{self.base_url}/rest/v1/articles",
-                    headers=self.headers,
-                    params={
-                        "select": "id",
-                        "source_url": f"eq.{source_url}",
-                        "limit": "1",
-                    },
-                )
-                data = resp.json()
-                return isinstance(data, list) and len(data) > 0
+                for table in ["news_stories", "articles"]:
+                    col = "original_url" if table == "news_stories" else "source_url"
+                    resp = await client.get(
+                        f"{self.base_url}/rest/v1/{table}",
+                        headers=self.headers,
+                        params={
+                            "select": "id",
+                            col: f"eq.{source_url}",
+                            "limit": "1",
+                        },
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if isinstance(data, list) and len(data) > 0:
+                            return True
+            return False
         except Exception as e:
             logger.error("Supabase dedup check failed", error=str(e))
             return False  # Fail open — let article proceed
@@ -140,20 +144,19 @@ class SupabaseWriter:
                         "limit": "50",
                     },
                 )
-                data = resp.json()
-                if not isinstance(data, list):
-                    return False
-                for item in data:
-                    stored = re.sub(r"[^\w\s]", "", (item.get("title") or "").lower())
-                    stored = re.sub(r"\s+", " ", stored).strip()
-                    # Simple substring similarity: if normalized is mostly in stored
-                    words_a = set(normalized.split())
-                    words_b = set(stored.split())
-                    if words_a and words_b:
-                        overlap = len(words_a & words_b) / max(len(words_a), len(words_b))
-                        if overlap > 0.75:
-                            return True
-                return False
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, list):
+                        for item in data:
+                            stored = re.sub(r"[^\w\s]", "", (item.get("title") or "").lower())
+                            stored = re.sub(r"\s+", " ", stored).strip()
+                            words_a = set(normalized.split())
+                            words_b = set(stored.split())
+                            if words_a and words_b:
+                                overlap = len(words_a & words_b) / max(len(words_a), len(words_b))
+                                if overlap > 0.75:
+                                    return True
+            return False
         except Exception as e:
             logger.error("Supabase headline dedup check failed", error=str(e))
             return False
@@ -177,34 +180,26 @@ class SupabaseWriter:
     ) -> Optional[str]:
         """
         Insert an AI-generated article draft into the Supabase articles table.
-
         Returns the new article ID on success, None on failure.
         """
-        article_id = str(uuid.uuid4())
         now_iso = datetime.now(timezone.utc).isoformat()
+        random_suffix = uuid.uuid4().hex[:6]
+        clean_slug = re.sub(r"[^\w\s-]", "", title.lower()).strip().replace(" ", "-")[:70]
+        slug = f"{clean_slug}-{random_suffix}" if clean_slug else f"story-{random_suffix}"
 
-        payload = {
-            "id": article_id,
+        # Exact schema payload for Supabase 'articles' table
+        article_payload = {
             "title": title,
-            "summary": summary,
+            "excerpt": summary,
             "content": content,
-            "category": category,
-            "author": author,
-            "source_name": source_name,
-            "source_url": source_url,
+            "category": category or "Health",
+            "author": author or "Flobstar News",
             "status": "draft",
             "image": image_url or "",
-            "originalImage": image_url or "",
-            # Audit timestamps
-            "original_published_at": published_at.isoformat() if published_at else None,
-            "detected_at": detected_at.isoformat(),
-            "processed_at": processed_at.isoformat(),
-            # Metadata
-            "source_depth": source_depth,
-            "source_word_count": source_word_count,
-            "ai_generated": True,
+            "source_url": source_url or "",
+            "slug": slug,
+            "date": now_iso[:10],
             "created_at": now_iso,
-            "updated_at": now_iso,
         }
 
         try:
@@ -212,20 +207,18 @@ class SupabaseWriter:
                 resp = await client.post(
                     f"{self.base_url}/rest/v1/articles",
                     headers=self.headers,
-                    json=payload,
+                    json=article_payload,
                 )
                 if resp.status_code in (200, 201):
                     result = resp.json()
-                    inserted_id = (
-                        result[0].get("id") if isinstance(result, list) else result.get("id")
-                    )
+                    inserted_id = str(result[0].get("id")) if isinstance(result, list) and result else None
                     logger.info(
                         "Draft article saved to Supabase",
-                        id=inserted_id or article_id,
+                        id=inserted_id,
                         title=title[:60],
                         category=category,
                     )
-                    return inserted_id or article_id
+                    return inserted_id
                 else:
                     logger.error(
                         "Supabase write_draft failed",

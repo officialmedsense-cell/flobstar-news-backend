@@ -35,21 +35,32 @@ def _is_valid_key(key: Optional[str]) -> bool:
 
 
 class AIGenerator:
-    """Service for AI-powered content generation (Mistral primary)"""
+    """Service for AI-powered content generation (Mistral primary with multi-key failover)"""
 
-    MISTRAL_MODEL = "mistral-large-latest"
+    MISTRAL_MODELS = ["mistral-large-latest", "mistral-small-latest", "open-mistral-nemo"]
 
     def __init__(self):
-        self.mistral_client = None
+        self.mistral_clients: list = []
         self.openai_client = None
         self.anthropic_client = None
 
-        # Initialize Mistral client (PRIMARY)
+        # Initialize Mistral clients (Primary & Fallback keys)
+        keys = []
         if _is_valid_key(settings.MISTRAL_API_KEY):
-            self.mistral_client = Mistral(api_key=settings.MISTRAL_API_KEY)
-            logger.info("Mistral client initialized", model=self.MISTRAL_MODEL)
-        else:
-            logger.warning("Mistral API key not configured — AI features disabled")
+            keys.append(settings.MISTRAL_API_KEY)
+        if _is_valid_key(getattr(settings, "MISTRAL_API_KEY_FALLBACK", None)) and settings.MISTRAL_API_KEY_FALLBACK not in keys:
+            keys.append(settings.MISTRAL_API_KEY_FALLBACK)
+
+        for idx, key in enumerate(keys, 1):
+            try:
+                client = Mistral(api_key=key)
+                self.mistral_clients.append(client)
+                logger.info(f"Mistral client #{idx} initialized", key_prefix=f"{key[:6]}...")
+            except Exception as e:
+                logger.warning(f"Could not init Mistral client #{idx}", error=str(e))
+
+        if not self.mistral_clients:
+            logger.warning("No valid Mistral API keys configured")
 
         # Initialize OpenAI client (FALLBACK)
         if _is_valid_key(settings.OPENAI_API_KEY):
@@ -72,7 +83,7 @@ class AIGenerator:
     def is_available(self, provider: str = "mistral") -> bool:
         """Check if an AI provider is available."""
         if provider == "mistral":
-            return self.mistral_client is not None
+            return len(self.mistral_clients) > 0
         elif provider == "openai":
             return self.openai_client is not None
         elif provider == "anthropic":
@@ -197,22 +208,41 @@ class AIGenerator:
         return fallback
 
     async def _generate_with_mistral(self, prompt: str) -> str:
-        """Generate content using Mistral AI (primary)."""
-        response = await self.mistral_client.chat.complete_async(
-            model=self.MISTRAL_MODEL,
-            max_tokens=2500,
-            messages=[
-                {
-                    "role": "system",
-                    "content": FLOBSTAR_SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        )
-        return response.choices[0].message.content.strip()
+        """Generate content using Mistral AI with multi-key failover and resilient fallback models."""
+        last_error = None
+        for client_idx, client in enumerate(self.mistral_clients):
+            for model_name in self.MISTRAL_MODELS:
+                try:
+                    response = await client.chat.complete_async(
+                        model=model_name,
+                        max_tokens=2500,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": FLOBSTAR_SYSTEM_PROMPT
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ]
+                    )
+                    content = response.choices[0].message.content
+                    if content and content.strip():
+                        return content.strip()
+                except Exception as e:
+                    last_error = e
+                    logger.warning(
+                        "Mistral attempt failed, trying next client/model",
+                        client_index=client_idx,
+                        model=model_name,
+                        error=str(e)[:120]
+                    )
+                    continue
+
+        if last_error:
+            raise last_error
+        raise RuntimeError("All Mistral clients and models exhausted")
 
     async def _generate_with_openai(self, prompt: str) -> str:
         """Generate content using OpenAI (fallback)."""
