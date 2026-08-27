@@ -107,9 +107,9 @@ class TelegramNotifier:
     ) -> bool:
         """
         Alert editors that a new AI draft is ready for review.
-        Links directly to /newsroom/stories/[id] for one-tap access.
+        Links directly to /Fnewsroom242/stories/[id] for one-tap access.
         """
-        review_url = f"{settings.FRONTEND_URL}/newsroom/stories/{article_id}"
+        review_url = f"{settings.FRONTEND_URL}/Fnewsroom242/stories/{article_id}"
         priority_emoji = "🚨" if is_breaking else "📰"
         priority_label = "BREAKING — AI Draft Ready" if is_breaking else "New AI Draft Ready"
 
@@ -158,7 +158,7 @@ class TelegramNotifier:
         Send a periodic summary to the newsroom after a productive poll cycle.
         Only called when at least one draft was saved.
         """
-        stories_url = f"{settings.FRONTEND_URL}/newsroom/stories"
+        stories_url = f"{settings.FRONTEND_URL}/Fnewsroom242/stories"
         text = (
             "📊 <b>Flobstar Poller Summary</b>\n\n"
             f"✅ Drafts saved: <b>{drafts_saved}</b>\n"

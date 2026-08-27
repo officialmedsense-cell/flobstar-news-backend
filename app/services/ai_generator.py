@@ -150,7 +150,56 @@ class AIGenerator:
         except json.JSONDecodeError:
             pass
 
-        return sanitize_article_html(response)
+    async def generate_unified_story(
+        self,
+        *,
+        original_headline: str,
+        original_content: str,
+        category: str = "Health",
+        author: str = "Flobstar News",
+        source_name: str = "News Wire",
+        source_url: str = "N/A",
+        source_type: str = "secondary",
+        provider: str = "mistral"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate a complete unified Flobstar News story in ONE single AI call.
+        Returns a dict with: headline, seo_title, meta_description, category, visual_keyword, article
+        """
+        prompt = build_full_article_user_message(
+            original_headline=original_headline,
+            original_content=original_content,
+            category=category,
+            author=author,
+            source_url=source_url,
+            source_name=source_name,
+            source_type=source_type,
+        )
+        response = await self._generate(prompt, provider, fallback=None)
+        if not response:
+            return None
+
+        try:
+            clean_json = response.replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(clean_json)
+            is_valid, errors, sanitized_data = validate_article_schema(parsed)
+            if is_valid and sanitized_data:
+                return sanitized_data
+
+            logger.warning("AI article schema validation warning", errors=errors)
+            if isinstance(parsed, dict) and parsed.get("article"):
+                return {
+                    "headline": parsed.get("headline") or original_headline,
+                    "seo_title": parsed.get("seo_title") or original_headline,
+                    "meta_description": parsed.get("meta_description") or "",
+                    "category": normalize_rss_category(parsed.get("category") or category),
+                    "visual_keyword": parsed.get("visual_keyword") or "",
+                    "article": sanitize_article_html(str(parsed["article"])),
+                }
+        except json.JSONDecodeError as e:
+            logger.error("JSON decode error in AI unified story response", error=str(e))
+
+        return None
 
     async def fact_check(
         self,

@@ -31,10 +31,25 @@ from app.notifications.telegram import telegram
 logger = structlog.get_logger()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Freshness configuration
+# Freshness & Content Filtering configuration
 # ──────────────────────────────────────────────────────────────────────────────
 PRIORITY_WINDOW_HOURS = 1      # Must cover: articles in the last 1 hour
 MAX_ARTICLE_AGE_HOURS = 24     # Upper bound: skip articles older than 24 hours
+
+import re
+
+# Regex for academic/opinion pieces that are NOT news stories
+NON_NEWS_TITLE_PATTERN = re.compile(
+    r"^\s*\[?(?:Comment|Essay|Correspondence|Review|Series|Editorial|Letter|Perspective|Book Review|Obituary|Correction|Erratum|Author Correction|Retraction|Podcast|Quiz|Table of Contents)\]?[\s:\-–—]+",
+    re.IGNORECASE
+)
+
+
+def is_non_news_item(title: str) -> bool:
+    """Return True if title indicates an academic letter, essay, comment, or non-news piece."""
+    if not title:
+        return True
+    return bool(NON_NEWS_TITLE_PATTERN.search(title))
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Default open-access RSS feed list (curated, verified 2025)
@@ -202,6 +217,11 @@ async def _poll_one_feed(feed: Dict[str, str], sem: asyncio.Semaphore) -> List[D
                 if not is_fresh(published_at):
                     continue
 
+                raw_title = entry.get("title", "").strip()
+                if not raw_title or is_non_news_item(raw_title):
+                    logger.debug(f"[{name}] Skipping non-news / opinion piece: {raw_title[:50]}")
+                    continue
+
                 # Extract content
                 content = ""
                 if hasattr(entry, "content") and entry.content:
@@ -366,33 +386,28 @@ async def poll_sources():
             f"({evaluation['word_count']} words) — generating article"
         )
 
-        # ── e. AI generation ──────────────────────────────────────────
+        # ── e. AI generation (Single Unified Call) ────────────────────
         processed_at = datetime.now(timezone.utc)
 
         try:
-            # Generate Flobstar headline
-            flobstar_headline = await ai_generator.generate_headline(
+            story_data = await ai_generator.generate_unified_story(
                 original_headline=title,
-                original_content=full_text[:3000],
-            )
-
-            # Generate lead summary
-            flobstar_summary = await ai_generator.generate_summary(
-                original_content=full_text[:3000],
-                max_length=200,
-            )
-
-            # Generate full article body
-            flobstar_article = await ai_generator.generate_full_article(
-                original_headline=flobstar_headline,
-                original_content=full_text[:8000],
+                original_content=full_text,
                 category=entry["category"],
+                author="Flobstar AI",
+                source_name=entry["source_name"],
+                source_url=source_url,
             )
 
-            if not flobstar_article or len(flobstar_article.strip()) < 100:
+            if not story_data or not story_data.get("article") or len(story_data["article"].strip()) < 100:
                 logger.warning(f"AI returned empty/short article for: {title[:50]}")
                 stats["skipped_ai_fail"] += 1
                 continue
+
+            flobstar_headline = story_data.get("headline") or title
+            flobstar_summary = story_data.get("meta_description") or title
+            flobstar_article = story_data["article"]
+            final_category = story_data.get("category") or entry["category"]
 
         except Exception as e:
             logger.error(f"AI generation failed for: {title[:50]}", error=str(e))
@@ -404,7 +419,7 @@ async def poll_sources():
             title=flobstar_headline,
             summary=flobstar_summary,
             content=flobstar_article,
-            category=entry["category"],
+            category=final_category,
             author="Flobstar AI",
             source_name=entry["source_name"],
             source_url=source_url,

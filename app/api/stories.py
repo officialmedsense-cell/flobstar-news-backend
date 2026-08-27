@@ -71,6 +71,61 @@ async def list_stories(
     return [_map_story(item) for item in items]
 
 
+@router.get("/stats/dashboard", response_model=dict)
+async def get_dashboard_stats():
+    """Aggregate real-time editorial stats from Supabase."""
+    from app.tasks.source_poller import DEFAULT_FEEDS
+
+    today_iso = datetime.now(timezone.utc).isoformat()[:10]
+    
+    # Query articles from Supabase
+    articles = await supabase_client.get("articles", {
+        "select": "id,title,category,status,date,created_at,source_url,image",
+        "order": "created_at.desc",
+        "limit": "500",
+    })
+    
+    # Query sources from Supabase (or fallback to defaults count)
+    sources = await supabase_client.get("news_sources", {"select": "id,status,consecutive_failures"})
+    total_sources = len(sources) if sources else len(DEFAULT_FEEDS)
+    active_sources = len([s for s in sources if s.get("status") == "active"]) if sources else len(DEFAULT_FEEDS)
+    warning_sources = len([s for s in sources if 0 < s.get("consecutive_failures", 0) <= 5]) if sources else 0
+    error_sources = len([s for s in sources if s.get("consecutive_failures", 0) > 5]) if sources else 0
+
+    total_scraped = len(articles)
+    drafts = [a for a in articles if a.get("status") == "draft"]
+    under_review = [a for a in articles if a.get("status") == "under_review"]
+    published = [a for a in articles if a.get("status") == "published"]
+    published_today = [
+        a for a in published
+        if (a.get("date") or "")[:10] == today_iso or (a.get("created_at") or "")[:10] == today_iso
+    ]
+    breaking = [
+        a for a in articles
+        if a.get("category") == "Health Alert" or a.get("priority") == "breaking"
+    ]
+
+    return {
+        "stats": {
+            "total_scraped": total_scraped,
+            "breaking": len(breaking),
+            "important": len([a for a in articles if a.get("priority") == "important"]),
+            "newStories": len(drafts),
+            "assignedToMe": 0,
+            "awaitingReview": len(under_review),
+            "publishedToday": len(published_today),
+            "totalPublished": len(published),
+        },
+        "sourceHealth": {
+            "total": total_sources,
+            "active": active_sources,
+            "warnings": warning_sources,
+            "errors": error_sources,
+        },
+        "recentStories": [_map_story(a) for a in articles[:10]],
+    }
+
+
 @router.get("/{story_id}", response_model=dict)
 async def get_story(story_id: str):
     """Get a specific news story by ID."""
@@ -101,25 +156,40 @@ async def create_story(story_data: dict):
 
 @router.put("/{story_id}", response_model=dict)
 async def update_story(story_id: str, story_data: dict):
-    """Update a story's headline, summary, content, category, or image."""
-    payload: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    """Update a story's headline, summary/excerpt, content, category, or image."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload: Dict[str, Any] = {"updated_at": now_iso}
+    
     if "flobstar_headline" in story_data or "title" in story_data:
         payload["title"] = story_data.get("flobstar_headline") or story_data.get("title")
-    if "flobstar_summary" in story_data or "summary" in story_data:
-        payload["summary"] = story_data.get("flobstar_summary") or story_data.get("summary")
+    
+    # Supabase 'articles' table uses 'excerpt' for summary/lead
+    summary_val = (
+        story_data.get("flobstar_summary")
+        or story_data.get("summary")
+        or story_data.get("excerpt")
+    )
+    if summary_val is not None:
+        payload["excerpt"] = summary_val
+
     if "flobstar_content" in story_data or "content" in story_data:
         payload["content"] = story_data.get("flobstar_content") or story_data.get("content")
     if "category" in story_data:
         payload["category"] = story_data["category"]
     if "status" in story_data:
         payload["status"] = story_data["status"]
+        if story_data["status"] == "published":
+            payload["date"] = now_iso[:10]
     if "image" in story_data:
         payload["image"] = story_data["image"]
 
     updated = await supabase_client.update("articles", story_id, payload)
     if not updated:
-        # Fallback to news_stories table
-        updated = await supabase_client.update("news_stories", story_id, story_data)
+        # Fallback to news_stories table (which uses 'summary')
+        news_story_payload = {**story_data}
+        if "excerpt" in news_story_payload and "summary" not in news_story_payload:
+            news_story_payload["summary"] = news_story_payload.pop("excerpt")
+        updated = await supabase_client.update("news_stories", story_id, news_story_payload)
 
     if not updated:
         return {"id": story_id, **story_data}
