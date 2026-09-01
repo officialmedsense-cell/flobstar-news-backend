@@ -14,6 +14,7 @@ Core background task that runs continuously on Render to:
 """
 
 import asyncio
+import gc
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 import httpx
@@ -35,6 +36,10 @@ logger = structlog.get_logger()
 # ──────────────────────────────────────────────────────────────────────────────
 PRIORITY_WINDOW_HOURS = 1      # Must cover: articles in the last 1 hour
 MAX_ARTICLE_AGE_HOURS = 24     # Upper bound: skip articles older than 24 hours
+
+# Memory safety — cap text fed to AI to prevent huge prompt allocations
+MAX_CONTENT_CHARS = 8_000      # ~1600-2000 words — enough for FULL_SOURCE articles
+MAX_RSS_CONTENT_CHARS = 3_000  # Cap RSS fallback content (summaries tend to be short anyway)
 
 import re
 
@@ -222,12 +227,13 @@ async def _poll_one_feed(feed: Dict[str, str], sem: asyncio.Semaphore) -> List[D
                     logger.debug(f"[{name}] Skipping non-news / opinion piece: {raw_title[:50]}")
                     continue
 
-                # Extract content
+                # Extract content — cap to avoid holding large HTML strings in RAM
                 content = ""
                 if hasattr(entry, "content") and entry.content:
-                    content = entry.content[0].get("value", "")
+                    content = entry.content[0].get("value", "") or ""
                 if not content:
                     content = getattr(entry, "summary", "") or ""
+                content = content[:MAX_RSS_CONTENT_CHARS]  # Memory cap
 
                 # Extract tags for category normalization
                 tags = [tag.get("term", "") for tag in getattr(entry, "tags", [])]
@@ -238,7 +244,7 @@ async def _poll_one_feed(feed: Dict[str, str], sem: asyncio.Semaphore) -> List[D
                     "source_name": name,
                     "source_url": entry.get("link", ""),
                     "title": entry.get("title", "").strip(),
-                    "summary": getattr(entry, "summary", "").strip(),
+                    "summary": (getattr(entry, "summary", "") or "")[:500].strip(),
                     "rss_content": content.strip(),
                     "published_at": published_at,
                     "detected_at": datetime.now(timezone.utc),
@@ -313,8 +319,10 @@ async def poll_sources():
     # 1. Load active feeds
     feeds = await load_active_feeds()
 
-    # 2. Fetch all feeds in parallel with controlled concurrency (5 at a time)
-    sem = asyncio.Semaphore(5)
+    # 2. Fetch all feeds in parallel with controlled concurrency.
+    # Render free plan = 512MB RAM. BeautifulSoup + feedparser per feed ≈ 10-20MB.
+    # Limit to 2 concurrent feeds to stay safely under memory limits.
+    sem = asyncio.Semaphore(2)
     tasks = [_poll_one_feed(feed, sem) for feed in feeds]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -367,6 +375,8 @@ async def poll_sources():
             entry["rss_content"],
             rss_summary=entry.get("summary", ""),
         )
+        # Hard cap on content size to prevent huge AI prompt allocations
+        full_text = full_text[:MAX_CONTENT_CHARS]
 
         # ── d. Source sufficiency gate ────────────────────────────────
         # If scraped text is thin, also try title + summary as context
@@ -450,8 +460,16 @@ async def poll_sources():
             is_breaking=entry["is_priority"],
         )
 
+        # Release per-article memory before next iteration
+        del full_text, story_data, flobstar_article
+        gc.collect()
+
         # Small delay between articles to avoid rate-limiting AI APIs
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(2.0)
+
+    # Release bulk feed data from RAM before summary
+    del all_entries, results, tasks
+    gc.collect()
 
     # Cycle complete summary
     elapsed = (datetime.now(timezone.utc) - poll_start).total_seconds()
@@ -472,3 +490,6 @@ async def poll_sources():
             seen=stats["seen"],
             elapsed=round(elapsed, 1),
         )
+
+    # Final GC pass after poll cycle completes
+    gc.collect()

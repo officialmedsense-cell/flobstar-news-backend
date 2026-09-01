@@ -9,38 +9,46 @@ import structlog
 
 logger = structlog.get_logger()
 
+# Cap scraped text to avoid holding large DOM text in RAM
+MAX_SCRAPE_CHARS = 8_000
+
 
 class WebScraper:
-    """Service for scraping web pages for news content"""
+    """Service for scraping web pages for news content."""
 
-    def __init__(self, timeout: int = 30):
+    def __init__(self, timeout: int = 15):
         self.timeout = timeout
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         }
-        self.client = httpx.AsyncClient(timeout=timeout, headers=self.headers)
 
     async def scrape_article(self, url: str) -> Dict:
         """
-        Scrape a news article from a URL
-
-        Args:
-            url: URL of the article to scrape
+        Scrape a news article from a URL.
+        Uses a short-lived per-request client to avoid connection accumulation.
 
         Returns:
             Dictionary containing article data
         """
+        soup = None
         try:
             logger.info("Scraping article", url=url)
 
-            # Fetch the page
-            response = await self.client.get(url, follow_redirects=True)
-            response.raise_for_status()
+            # Use a fresh client per request — avoids connection pool memory accumulation
+            async with httpx.AsyncClient(
+                timeout=self.timeout,
+                headers=self.headers,
+                follow_redirects=True,
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                raw_html = response.content
 
-            # Parse HTML
-            soup = BeautifulSoup(response.content, "lxml")
+            # Parse HTML — lxml is fast and memory-efficient
+            soup = BeautifulSoup(raw_html, "lxml")
+            del raw_html  # Release raw bytes immediately
 
             # Extract article data
             article_data = {
@@ -62,6 +70,13 @@ class WebScraper:
         except Exception as e:
             logger.error("Error scraping article", url=url, error=str(e))
             raise
+        finally:
+            # Always decompose the BeautifulSoup tree to release the DOM from RAM
+            if soup is not None:
+                try:
+                    soup.decompose()
+                except Exception:
+                    pass
 
     def _extract_title(self, soup: BeautifulSoup) -> str:
         """Extract article title from HTML"""
@@ -85,7 +100,7 @@ class WebScraper:
         return ""
 
     def _extract_content(self, soup: BeautifulSoup) -> str:
-        """Extract article content from HTML"""
+        """Extract article content from HTML, capped at MAX_SCRAPE_CHARS."""
         # Try common content selectors
         selectors = [
             "article",
@@ -105,7 +120,8 @@ class WebScraper:
 
                 content = element.get_text(separator="\n", strip=True)
                 if content and len(content) > 100:  # Filter out short content
-                    return content
+                    # Cap output to avoid large string allocations
+                    return content[:MAX_SCRAPE_CHARS]
 
         return ""
 
@@ -173,8 +189,8 @@ class WebScraper:
         return ""
 
     async def close(self):
-        """Close the HTTP client"""
-        await self.client.aclose()
+        """No-op: clients are now per-request and self-closing."""
+        pass
 
     async def __aenter__(self):
         return self

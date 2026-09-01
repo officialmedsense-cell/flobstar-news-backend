@@ -37,7 +37,9 @@ def _is_valid_key(key: Optional[str]) -> bool:
 class AIGenerator:
     """Service for AI-powered content generation (Mistral primary with multi-key failover)"""
 
-    MISTRAL_MODELS = ["mistral-large-latest", "mistral-small-latest", "open-mistral-nemo"]
+    # mistral-small-latest first — mistral-large-latest is blocked on standard subscription keys
+    # and wasting time on a 403 before falling through causes unnecessary latency and retry overhead.
+    MISTRAL_MODELS = ["mistral-small-latest", "open-mistral-nemo"]
 
     def __init__(self):
         self.mistral_clients: list = []
@@ -262,6 +264,8 @@ class AIGenerator:
         for client_idx, client in enumerate(self.mistral_clients):
             for model_name in self.MISTRAL_MODELS:
                 try:
+                    # Cap prompt length to avoid large memory allocations
+                    capped_prompt = prompt[:10_000] if len(prompt) > 10_000 else prompt
                     response = await client.chat.complete_async(
                         model=model_name,
                         max_tokens=2500,
@@ -272,12 +276,13 @@ class AIGenerator:
                             },
                             {
                                 "role": "user",
-                                "content": prompt
+                                "content": capped_prompt
                             }
                         ]
                     )
                     content = response.choices[0].message.content
                     if content and content.strip():
+                        del capped_prompt, response
                         return content.strip()
                 except Exception as e:
                     last_error = e
