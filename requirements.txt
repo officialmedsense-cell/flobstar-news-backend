@@ -1,4 +1,4 @@
-# Flobstar News Intelligence Backend — Requirements
+# Flobstar Intelligence Backend — Requirements
 
 # ── Web framework ──────────────────────────────────────────────────────────────
 fastapi>=0.109.0

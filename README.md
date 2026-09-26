@@ -1,6 +1,6 @@
-# Flobstar News Intelligence Backend
+# Flobstar Intelligence Backend
 
-Python/FastAPI backend for the Flobstar News Intelligence & Automated Newsroom System.
+Python/FastAPI backend for the Flobstar Intelligence & Automated Newsroom System.
 
 ## Features
 

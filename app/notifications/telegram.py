@@ -1,10 +1,10 @@
 """
-Telegram notification service for Flobstar News Intelligence.
+Telegram notification service for Flobstar Intelligence.
 Sends breaking news alerts, AI draft notifications, and system updates
 to the Flobstar newsroom Telegram channel/group.
 
 All alerts include a direct one-click link to the inline article editor
-in the MedSense Dashboard newsroom.
+in the Flobstar Dashboard newsroom.
 """
 
 import httpx
@@ -181,7 +181,7 @@ class TelegramNotifier:
 
     async def alert_ai_draft_ready(self, headline: str, story_id: str) -> bool:
         """Alert editors that an AI draft is ready (legacy compat)."""
-        newsroom_url = f"{settings.FRONTEND_URL}/MedSense_Dashboard"
+        newsroom_url = f"{settings.FRONTEND_URL}/Flobstar_Dashboard"
         text = (
             "🤖 <b>AI Draft Ready for Review</b>\n\n"
             f"📰 {self._escape(headline)}\n"

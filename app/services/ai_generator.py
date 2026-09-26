@@ -39,7 +39,7 @@ class AIGenerator:
 
     # mistral-small-latest first — mistral-large-latest is blocked on standard subscription keys
     # and wasting time on a 403 before falling through causes unnecessary latency and retry overhead.
-    MISTRAL_MODELS = ["mistral-small-latest", "open-mistral-nemo"]
+    MISTRAL_MODELS = ["ministral-8b-latest", "open-mistral-nemo", "open-mistral-7b"]
 
     def __init__(self):
         self.mistral_clients: list = []
@@ -111,7 +111,8 @@ class AIGenerator:
     ) -> str:
         """Generate an optimized headline for a news story using Flobstar rules."""
         prompt = build_headline_user_message(original_headline, original_content)
-        return await self._generate(prompt, provider, fallback=original_headline)
+        result = await self._generate(prompt, provider, fallback=original_headline)
+        return result or original_headline
 
     async def generate_summary(
         self,
@@ -121,7 +122,8 @@ class AIGenerator:
     ) -> str:
         """Generate a concise summary/lead paragraph for news content."""
         prompt = build_summary_user_message(original_content, max_words=max_length)
-        return await self._generate(prompt, provider, fallback=original_content[:max_length])
+        result = await self._generate(prompt, provider, fallback=original_content[:max_length])
+        return result or (original_content[:max_length] if original_content else "")
 
     async def generate_full_article(
         self,
@@ -152,20 +154,22 @@ class AIGenerator:
         except json.JSONDecodeError:
             pass
 
+        return sanitize_article_html(response)
+
     async def generate_unified_story(
         self,
         *,
         original_headline: str,
         original_content: str,
         category: str = "Health",
-        author: str = "Flobstar News",
+        author: str = "Flobstar",
         source_name: str = "News Wire",
         source_url: str = "N/A",
         source_type: str = "secondary",
         provider: str = "mistral"
     ) -> Optional[Dict[str, Any]]:
         """
-        Generate a complete unified Flobstar News story in ONE single AI call.
+        Generate a complete unified Flobstar story in ONE single AI call.
         Returns a dict with: headline, seo_title, meta_description, category, visual_keyword, article
         """
         prompt = build_full_article_user_message(
@@ -300,6 +304,8 @@ class AIGenerator:
 
     async def _generate_with_openai(self, prompt: str) -> str:
         """Generate content using OpenAI (fallback)."""
+        if not self.openai_client:
+            raise RuntimeError("OpenAI client not initialized")
         response = await self.openai_client.chat.completions.create(
             model=settings.AI_MODEL,
             messages=[
@@ -309,17 +315,22 @@ class AIGenerator:
             temperature=0.7,
             max_tokens=2000
         )
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        return content.strip() if content else ""
 
     async def _generate_with_anthropic(self, prompt: str) -> str:
         """Generate content using Anthropic (fallback)."""
+        if not self.anthropic_client:
+            raise RuntimeError("Anthropic client not initialized")
         response = await self.anthropic_client.messages.create(
             model="claude-3-opus-20240229",
             max_tokens=2000,
             system=FLOBSTAR_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}]
         )
-        return response.content[0].text.strip()
+        first_block = response.content[0]
+        text = getattr(first_block, "text", "")
+        return text.strip() if text else ""
 
 
 # Global AI generator instance

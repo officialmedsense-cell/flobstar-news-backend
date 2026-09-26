@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """Application settings"""
     
     # Application
-    APP_NAME: str = "Flobstar News Intelligence"
+    APP_NAME: str = "Flobstar Intelligence"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Email (Resend)
     RESEND_API_KEY: Optional[str] = None
     RESEND_SENDER_EMAIL: str = "onboarding@resend.dev"
-    RESEND_SENDER_NAME: str = "Flobstar News"
+    RESEND_SENDER_NAME: str = "Flobstar"
     
     # Telegram (optional)
     TELEGRAM_BOT_TOKEN: Optional[str] = None

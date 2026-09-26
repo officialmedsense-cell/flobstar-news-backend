@@ -63,7 +63,7 @@ async def test_dashboard_stats():
 async def main():
     """Run all tests"""
     print("=" * 50)
-    print("Testing Flobstar News Intelligence Backend API")
+    print("Testing Flobstar Intelligence Backend API")
     print("=" * 50)
 
     tests = [

@@ -1,5 +1,5 @@
 """
-Background workers for Flobstar News Intelligence
+Background workers for Flobstar Intelligence
 """
 
 from app.tasks.source_poller import poll_sources

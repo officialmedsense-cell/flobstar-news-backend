@@ -1,5 +1,5 @@
 """
-Services for Flobstar News Intelligence
+Services for Flobstar Intelligence
 """
 
 from app.services.rss_parser import RSSParser

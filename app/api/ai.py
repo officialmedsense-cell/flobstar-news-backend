@@ -303,6 +303,6 @@ async def test_telegram(current_user: dict = Depends(require_service_role)):
     connection = await telegram.test_connection()
     if connection.get("ok"):
         await telegram.alert_system_status(
-            "✅ Flobstar News Intelligence backend is online and Telegram notifications are working!"
+            "✅ Flobstar Intelligence backend is online and Telegram notifications are working!"
         )
     return connection

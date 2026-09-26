@@ -1,6 +1,6 @@
 """
 Supabase Writer Service
-Writes AI-generated article drafts directly to the Flobstar News Supabase
+Writes AI-generated article drafts directly to the Flobstar Supabase
 'articles' table — the same table used by the Next.js frontend newsroom.
 """
 
@@ -193,7 +193,7 @@ class SupabaseWriter:
             "excerpt": summary,
             "content": content,
             "category": category or "Health",
-            "author": author or "Flobstar News",
+            "author": author or "Flobstar",
             "status": "draft",
             "image": image_url or "",
             "source_url": source_url or "",

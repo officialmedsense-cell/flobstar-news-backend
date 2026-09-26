@@ -1,1 +1,1 @@
-"""Flobstar News Intelligence Backend Application"""
+"""Flobstar Intelligence Backend Application"""

@@ -1,8 +1,8 @@
 """
-FLOBSTAR NEWS — AI NEWSROOM SYSTEM & BACKEND EDITORIAL ENGINE
+FLOBSTAR — AI NEWSROOM SYSTEM & BACKEND EDITORIAL ENGINE
 =============================================================
 Single authoritative Python source of truth for:
-  - 28-Section Flobstar News AI Newsroom System Prompt
+  - 28-Section Flobstar AI Newsroom System Prompt
   - Official 12-Category Taxonomy & Deterministic Normalization
   - Programmatic Article Schema Validation
   - Semantic HTML Sanitization & Paragraph Enforcement (<p>...</p>)
@@ -166,19 +166,19 @@ def normalize_rss_category(raw_category_or_source: Optional[str]) -> str:
     return "Health"
 
 
-FLOBSTAR_SYSTEM_PROMPT = """# FLOBSTAR NEWS — AI NEWSROOM SYSTEM
+FLOBSTAR_SYSTEM_PROMPT = """# FLOBSTAR — AI NEWSROOM SYSTEM
 
 ## CORE EDITORIAL MANTRA
 **The source is the evidence base, not the article structure.**
 **Preserve the reporting. Reconstruct the narrative. Simplify the language. Preserve uncertainty. Never invent.**
 
-You are the AI News Writer for **Flobstar News**, a global digital health and medical news organization.
+You are the AI News Writer for **Flobstar**, a global digital health and medical news organization.
 
-Your responsibility is to transform verified source material and assigned news information into clear, accurate, original, professionally edited journalism for Flobstar News.
+Your responsibility is to transform verified source material and assigned news information into clear, accurate, original, professionally edited journalism for Flobstar.
 
 The finished article must read like it was written and edited by a professional newsroom, not generated from a visible template.
 
-Flobstar News values:
+Flobstar values:
 **Accuracy. Clarity. Context. Independence. Humanity.**
 
 Our guiding human principle is:
@@ -201,7 +201,7 @@ Our guiding human principle is:
 
 # 1. CRITICAL OUTPUT RULE
 
-For a standard Flobstar News article, the AI must generate **ONE COMPLETE ARTICLE**.
+For a standard Flobstar article, the AI must generate **ONE COMPLETE ARTICLE**.
 
 Do not generate separate article components that will later be stitched together.
 
@@ -605,7 +605,7 @@ Headline: {original_headline}
 Full Text: {original_content}
 
 TASK:
-Write ONE COMPLETE, ORIGINAL news article in pure continuous prose following all Flobstar News editorial standards.
+Write ONE COMPLETE, ORIGINAL news article in pure continuous prose following all Flobstar editorial standards.
 
 SOURCE SUFFICIENCY & DEPTH INSTRUCTIONS:
 - Source Access Status is {sufficiency['status']} ({sufficiency['substantive_word_count']} words).
@@ -744,59 +744,6 @@ def validate_article_schema(data: Any) -> Tuple[bool, List[str], Optional[Dict[s
     }
 
 
-def build_full_article_user_message(
-    original_headline: str,
-    original_content: str,
-    category: str = "Health",
-    author: str = "Flobstar Editorial Board",
-    source_url: str = "N/A"
-) -> str:
-    """User message for full article generation (JSON output)."""
-    norm_cat = normalize_rss_category(category)
-
-    return f"""SOURCE INFORMATION:
-Source URL: {source_url}
-Preliminary Category Hint: {norm_cat}
-Author Byline: {author}
-
-SOURCE CONTENT:
-Headline: {original_headline}
-Full Text: {original_content}
-
-TASK:
-Write ONE COMPLETE, ORIGINAL news article in pure continuous prose following all Flobstar News editorial standards.
-
-SOURCE FIDELITY RULES (apply before writing):
-- Write ONLY information traceable to the supplied source material.
-- Do NOT upgrade the evidence. Preserve exact wording strength: "associated with" stays "associated with", not "caused".
-- Do NOT manufacture significance, predictions, expert opinions, or programme goals not stated in the source.
-- Do NOT change geographic scope, participant numbers, percentages, dates, or institutional names.
-- Do NOT add background padding or filler to reach word count. Accuracy > word count.
-- Every numerical and geographical claim must remain faithful to the source.
-- Use precise attribution: "According to...", "Researchers reported...", "Organizers said..."
-- Never fabricate quotations. Use attributed paraphrase if no direct quote is available.
-
-STRICT FORMAT INSTRUCTIONS:
-1. "category" MUST be exactly one of: {json.dumps(OFFICIAL_CATEGORIES)}.
-2. "headline" MUST be concise (8–14 words, sentence case, NO hyphens or dashes).
-3. "article" MUST be pure continuous prose formatted in clean semantic <p>...</p> HTML tags only.
-4. NO subheadings (<h3>, <h4>), NO bullet points (<ul>, <li>), NO Key Takeaways, NO FAQs, NO executive summaries, NO inline disclaimers.
-5. NO compound-word hyphens (gene editing not gene-editing). NO em-dashes or en-dashes.
-6. Before returning JSON, run internal source check: every fact traceable? evidence preserved? no invented material? exact numbers intact?
-7. Return ONLY valid JSON:
-
-{{
-  "headline": "Concise professional headline in sentence case",
-  "seo_title": "SEO page title",
-  "meta_description": "Meta description",
-  "category": "{norm_cat}",
-  "visual_keyword": "Single specific medical keyword",
-  "article": "<p>First paragraph...</p>\\n\\n<p>Second paragraph...</p>\\n\\n<p>Third paragraph...</p>"
-}}
-
-If non-medical, return: {{"rejected": true}}"""
-
-
 EVIDENCE_UPGRADE_PATTERNS = [
     (re.compile(r"represents?\s+a\s+(major|significant|landmark|historic|groundbreaking)", re.I), 'Manufactured significance: "represents a major/significant..."', 2),
     (re.compile(r"marks?\s+a\s+(major|significant|landmark|pivotal|turning|historic)", re.I), 'Manufactured significance: "marks a major/significant..."', 2),
@@ -853,7 +800,7 @@ def build_headline_user_message(original_headline: str, original_content: str) -
     return f"""Source Headline: {original_headline}
 Source Content (excerpt): {original_content[:600]}
 
-Task: Rewrite the headline following Flobstar News headline rules:
+Task: Rewrite the headline following Flobstar headline rules:
 - 8–14 words, sentence case
 - No hyphens, en-dashes, or em-dashes
 - Direct, specific, journalistic — not clickbait
@@ -866,7 +813,7 @@ def build_summary_user_message(original_content: str, max_words: int = 150) -> s
     """User message for lead paragraph generation."""
     return f"""Source Content: {original_content}
 
-Task: Write a lead paragraph for this story following Flobstar News editorial standards:
+Task: Write a lead paragraph for this story following Flobstar editorial standards:
 - Approximately {max_words} words
 - Communicates the most important facts immediately
 - Written in natural, flowing journalistic prose
@@ -880,7 +827,7 @@ def build_fact_check_user_message(content: str) -> str:
     return f"""Content to fact-check:
 {content}
 
-Task: Analyze this health news content as a Flobstar News fact-checker.
+Task: Analyze this health news content as a Flobstar fact-checker.
 
 Return ONLY valid JSON in this exact structure:
 {{

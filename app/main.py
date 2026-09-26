@@ -1,5 +1,5 @@
 """
-Flobstar News Intelligence Backend
+Flobstar Intelligence Backend
 Main FastAPI application entry point
 """
 
@@ -34,7 +34,7 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager — startup and shutdown."""
-    logger.info("Starting Flobstar News Intelligence Backend")
+    logger.info("Starting Flobstar Intelligence Backend")
 
     # Start background task scheduler
     await scheduler.start()
@@ -43,15 +43,15 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down Flobstar News Intelligence Backend")
+    logger.info("Shutting down Flobstar Intelligence Backend")
     await scheduler.stop()
     logger.info("Shutdown complete")
 
 
 # Create FastAPI app
 app = FastAPI(
-    title="Flobstar News Intelligence API",
-    description="Backend API for Flobstar News Intelligence & Automated Newsroom",
+    title="Flobstar Intelligence API",
+    description="Backend API for Flobstar Intelligence & Automated Newsroom",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -78,7 +78,7 @@ async def root():
     """Root endpoint returning 200 OK and service status."""
     return {
         "status": "healthy",
-        "service": "Flobstar News Intelligence Backend",
+        "service": "Flobstar Intelligence Backend",
         "version": "1.0.0",
         "docs": "/docs",
         "health": "/health",
@@ -96,7 +96,7 @@ async def health_check():
     from datetime import datetime, timezone
     return {
         "status": "healthy",
-        "service": "Flobstar News Intelligence Backend",
+        "service": "Flobstar Intelligence Backend",
         "version": "1.0.0",
         "server_time_utc": datetime.now(timezone.utc).isoformat(),
         "scheduler": {

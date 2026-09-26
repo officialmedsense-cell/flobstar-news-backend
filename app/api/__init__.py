@@ -1,5 +1,5 @@
 """
-API routers for Flobstar News Intelligence
+API routers for Flobstar Intelligence
 """
 
 from app.api.sources import router as sources_router

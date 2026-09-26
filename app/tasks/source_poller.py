@@ -1,5 +1,5 @@
 """
-Flobstar News — 24/7 Source Poller
+Flobstar — 24/7 Source Poller
 ====================================
 Core background task that runs continuously on Render to:
   1. Fetch all active RSS feeds in parallel (async, 8-second timeout each)

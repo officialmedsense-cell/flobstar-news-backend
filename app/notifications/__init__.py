@@ -1,5 +1,5 @@
 """
-Notifications package for Flobstar News Intelligence.
+Notifications package for Flobstar Intelligence.
 """
 
 from .telegram import telegram, TelegramNotifier

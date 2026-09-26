@@ -1,9 +1,9 @@
-# Flobstar News Intelligence Backend — Startup Script
+# Flobstar Intelligence Backend — Startup Script
 # Run this from the backend/ directory
 
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Cyan
-Write-Host "  Flobstar News Intelligence Backend" -ForegroundColor Cyan
+Write-Host "  Flobstar Intelligence Backend" -ForegroundColor Cyan
 Write-Host "  http://localhost:8000" -ForegroundColor Yellow
 Write-Host "  Swagger UI: http://localhost:8000/docs" -ForegroundColor Yellow
 Write-Host "=============================================" -ForegroundColor Cyan

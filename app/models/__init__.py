@@ -1,5 +1,5 @@
 """
-Database models for Flobstar News Intelligence
+Database models for Flobstar Intelligence
 """
 
 from app.models.news_source import NewsSource
